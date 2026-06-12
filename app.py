@@ -511,6 +511,24 @@ def chart_mc_fan(weights, daily_ret, t=None) -> go.Figure:
     return fig
 
 
+def chart_price_history(prices: pd.DataFrame, t=None) -> go.Figure:
+    palette = [NAV, SGE, GLD, STL, RED, MID, "#6b4fbb", "#c87941", "#2d8a8a", "#8a4a6b"]
+    fig = go.Figure()
+    for i, col in enumerate(prices.columns):
+        norm = (prices[col] / prices[col].iloc[0] - 1) * 100
+        fig.add_trace(go.Scatter(
+            x=norm.index, y=norm.values, name=col, mode="lines",
+            line=dict(color=palette[i % len(palette)], width=1.5),
+            hovertemplate=f"{col}: %{{y:+.1f}}%<extra>%{{x|%b %d, %Y}}</extra>",
+        ))
+    grid = t["grid"] if t else "#e2e0db"
+    fig.add_hline(y=0, line=dict(color=grid, width=1, dash="dash"))
+    fig.update_layout(**_layout(300, t))
+    fig.update_yaxes(ticksuffix="%", tickformat="+.0f",
+                     title=dict(text="Return from Start", font=dict(size=10)))
+    return fig
+
+
 def pie_chart(weights, title, color, t=None) -> go.Figure:
     labels = [tk for tk, w in weights.items() if w > 0.001]
     values = [weights[tk] for tk in labels]
@@ -775,6 +793,10 @@ def main():
 
         st.markdown('<div class="section-label">Efficient Frontier</div>', unsafe_allow_html=True)
         st.plotly_chart(chart_frontier(mc_df, all_metrics, spy_prices, rf, t=T),
+                        use_container_width=True, config={"displayModeBar": False})
+
+        st.markdown('<div class="section-label">Individual Asset Price History</div>', unsafe_allow_html=True)
+        st.plotly_chart(chart_price_history(prices, t=T),
                         use_container_width=True, config={"displayModeBar": False})
 
     # ── Tab 2: Allocations ─────────────────────────────────────────────────────
