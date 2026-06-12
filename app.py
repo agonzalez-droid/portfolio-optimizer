@@ -442,11 +442,11 @@ def chart_asset_scatter(daily_ret, t=None) -> go.Figure:
     rets = daily_ret.mean() * 252
     vols = daily_ret.std() * np.sqrt(252)
     fig = go.Figure()
-    for t in daily_ret.columns:
+    for tk in daily_ret.columns:
         fig.add_trace(go.Scatter(
-            x=[vols[t]], y=[rets[t]], mode="markers+text",
-            marker=dict(size=10, color=SGE if rets[t] > 0 else RED, opacity=0.85),
-            text=[t], textposition="top center", textfont=dict(size=9), name=t,
+            x=[vols[tk]], y=[rets[tk]], mode="markers+text",
+            marker=dict(size=10, color=SGE if rets[tk] > 0 else RED, opacity=0.85),
+            text=[tk], textposition="top center", textfont=dict(size=9), name=tk,
         ))
     fig.update_layout(**_layout(300, t), showlegend=False)
     fig.update_xaxes(tickformat=".0%", title=dict(text="Annual Volatility", font=dict(size=10)))
@@ -460,8 +460,8 @@ def chart_sector_bar(weights_dict, sectors, t=None) -> go.Figure:
     colors = [NAV, SGE, GLD, STL]
     for i, (name, weights) in enumerate(weights_dict.items()):
         sw = {}
-        for t, w in weights.items():
-            s = sectors.get(t, "Unknown")
+        for tk, w in weights.items():
+            s = sectors.get(tk, "Unknown")
             sw[s] = sw.get(s, 0) + w
         fig.add_trace(go.Bar(
             name=name, x=all_sec, y=[sw.get(s, 0) for s in all_sec],
