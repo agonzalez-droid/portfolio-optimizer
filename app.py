@@ -190,13 +190,16 @@ def fetch_income_history(tickers: tuple) -> dict:
                 out[tk] = {}
                 continue
             inc.index = [str(i).lower().strip() for i in inc.index]
-            rev_series = ni_series = None
+            rev_series = ni_series = eps_series = None
             for idx in inc.index:
                 if rev_series is None and ("total revenue" in idx or idx == "revenue"):
                     rev_series = inc.loc[idx]
                 if ni_series is None and "net income" in idx:
                     ni_series = inc.loc[idx]
-            result = {"revenue_history": [], "net_income_history": [], "income_years": []}
+                if eps_series is None and ("basic eps" in idx or "diluted eps" in idx):
+                    eps_series = inc.loc[idx]
+            result = {"revenue_history": [], "net_income_history": [], "income_years": [],
+                      "eps_history": [], "eps_years": []}
             if rev_series is not None:
                 rev_clean = rev_series.dropna().sort_index()
                 result["revenue_history"] = list(rev_clean.values.astype(float))
@@ -206,6 +209,10 @@ def fetch_income_history(tickers: tuple) -> dict:
                 result["net_income_history"] = list(ni_clean.values.astype(float))
                 if not result["income_years"]:
                     result["income_years"] = [str(d.year) for d in ni_clean.index]
+            if eps_series is not None:
+                eps_clean = eps_series.dropna().sort_index()
+                result["eps_history"] = list(eps_clean.values.astype(float))
+                result["eps_years"] = [str(d.year) for d in eps_clean.index]
             out[tk] = result
         except Exception:
             out[tk] = {}
@@ -224,6 +231,7 @@ def fetch_analyst_data(tickers: tuple) -> dict:
                 "target_low":    info.get("targetLowPrice"),
                 "rec_key":       (info.get("recommendationKey") or "").lower(),
                 "num_analysts":  info.get("numberOfAnalystOpinions"),
+                "trailing_pe":   info.get("trailingPE"),
             }
         except Exception:
             out[tk] = {}
@@ -726,7 +734,7 @@ def analyst_table(tickers, analyst_data, cur_prices) -> str:
         "underperform": "Underperform", "sell": "Sell",
     }
     h = ('<div class="mtable-wrap"><table class="mtable">'
-         '<tr><th class="lh">Ticker</th><th>Price</th>'
+         '<tr><th class="lh">Ticker</th><th>Price</th><th>P/E</th>'
          '<th>Low Target</th><th>Mean Target</th><th>High Target</th>'
          '<th>Upside</th><th>Rating</th><th>Analysts</th></tr>')
     for tk in tickers:
@@ -737,6 +745,7 @@ def analyst_table(tickers, analyst_data, cur_prices) -> str:
         high  = d.get("target_high")
         rec   = d.get("rec_key", "")
         n     = d.get("num_analysts")
+        pe    = d.get("trailing_pe")
 
         upside_html = "—"
         if mean and price:
@@ -750,6 +759,7 @@ def analyst_table(tickers, analyst_data, cur_prices) -> str:
 
         h += (f'<tr><td class="lh">{_html.escape(tk)}</td>'
               f'<td>{f"${price:,.2f}" if price else "—"}</td>'
+              f'<td>{f"{pe:.1f}x" if pe else "—"}</td>'
               f'<td>{f"${low:,.2f}" if low else "—"}</td>'
               f'<td>{f"${mean:,.2f}" if mean else "—"}</td>'
               f'<td>{f"${high:,.2f}" if high else "—"}</td>'
@@ -940,6 +950,29 @@ def main():
                         ),
                         use_container_width=True, config={"displayModeBar": False},
                     )
+
+        eps_tickers = [tk for tk in active if income_history.get(tk, {}).get("eps_history")]
+        if eps_tickers:
+            st.markdown('<div class="section-label">EPS History by Ticker</div>', unsafe_allow_html=True)
+            eps_cols = st.columns(2)
+            for i, tk in enumerate(eps_tickers):
+                d = income_history[tk]
+                with eps_cols[i % 2]:
+                    eps_colors = [SGE if v >= 0 else RED for v in d["eps_history"]]
+                    fig_eps = go.Figure(go.Bar(
+                        x=d["eps_years"], y=d["eps_history"],
+                        name="EPS", marker_color=eps_colors, opacity=0.85,
+                        hovertemplate="$%{y:.2f}<extra>EPS</extra>",
+                    ))
+                    fig_eps.update_layout(**_layout(210, T), barmode="group",
+                                         title=dict(text=tk, font=dict(size=11,
+                                         color=T["tc"] if T else NAV), x=0.5))
+                    fig_eps.update_xaxes(type="category")
+                    fig_eps.update_yaxes(tickprefix="$", tickformat=".2f",
+                                         zeroline=True, zerolinecolor=T["grid"] if T else "#e2e0db",
+                                         zerolinewidth=1)
+                    st.plotly_chart(fig_eps, use_container_width=True,
+                                    config={"displayModeBar": False})
 
     # ── Tab 2: Allocations ─────────────────────────────────────────────────────
     with tab2:
