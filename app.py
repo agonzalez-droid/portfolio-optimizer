@@ -181,6 +181,24 @@ def fetch_current_prices(tickers: tuple) -> dict:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def fetch_analyst_data(tickers: tuple) -> dict:
+    out = {}
+    for tk in tickers:
+        try:
+            info = yf.Ticker(tk).info
+            out[tk] = {
+                "target_mean":   info.get("targetMeanPrice"),
+                "target_high":   info.get("targetHighPrice"),
+                "target_low":    info.get("targetLowPrice"),
+                "rec_key":       (info.get("recommendationKey") or "").lower(),
+                "num_analysts":  info.get("numberOfAnalystOpinions"),
+            }
+        except Exception:
+            out[tk] = {}
+    return out
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_sectors(tickers: tuple) -> dict:
     out = {}
     for t in tickers:
@@ -635,6 +653,49 @@ def rebalance_table(weights_dict, cur_prices, portfolio_value) -> str:
     return h + "</table></div>"
 
 
+def analyst_table(tickers, analyst_data, cur_prices) -> str:
+    REC_COLOR = {
+        "strong_buy": SGE, "buy": SGE, "hold": GLD,
+        "underperform": RED, "sell": RED,
+    }
+    REC_LABEL = {
+        "strong_buy": "Strong Buy", "buy": "Buy", "hold": "Hold",
+        "underperform": "Underperform", "sell": "Sell",
+    }
+    h = ('<div class="mtable-wrap"><table class="mtable">'
+         '<tr><th class="lh">Ticker</th><th>Price</th>'
+         '<th>Low Target</th><th>Mean Target</th><th>High Target</th>'
+         '<th>Upside</th><th>Rating</th><th>Analysts</th></tr>')
+    for tk in tickers:
+        d = analyst_data.get(tk, {})
+        price = cur_prices.get(tk)
+        mean  = d.get("target_mean")
+        low   = d.get("target_low")
+        high  = d.get("target_high")
+        rec   = d.get("rec_key", "")
+        n     = d.get("num_analysts")
+
+        upside_html = "—"
+        if mean and price:
+            pct = (mean - price) / price * 100
+            col = SGE if pct >= 0 else RED
+            upside_html = f'<span style="color:{col};font-weight:700;">{pct:+.1f}%</span>'
+
+        rec_col   = REC_COLOR.get(rec, MID)
+        rec_label = REC_LABEL.get(rec, rec.replace("_", " ").title() if rec else "—")
+        rec_html  = f'<span style="color:{rec_col};font-weight:700;">{_html.escape(rec_label)}</span>'
+
+        h += (f'<tr><td class="lh">{_html.escape(tk)}</td>'
+              f'<td>{f"${price:,.2f}" if price else "—"}</td>'
+              f'<td>{f"${low:,.2f}" if low else "—"}</td>'
+              f'<td>{f"${mean:,.2f}" if mean else "—"}</td>'
+              f'<td>{f"${high:,.2f}" if high else "—"}</td>'
+              f'<td>{upside_html}</td>'
+              f'<td>{rec_html}</td>'
+              f'<td>{n if n else "—"}</td></tr>')
+    return h + "</table></div>"
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main():
     dark_mode = st.session_state.get("dark_mode", False)
@@ -757,8 +818,9 @@ def main():
         mc_df = mc_frontier(daily_ret, n_sims, rf)
 
     with st.spinner("Fetching supplementary data…"):
-        cur_prices = fetch_current_prices(active)
-        sectors = fetch_sectors(active)
+        cur_prices   = fetch_current_prices(active)
+        sectors      = fetch_sectors(active)
+        analyst_data = fetch_analyst_data(active)
 
     # ══ TABS ══════════════════════════════════════════════════════════════════
     tab1, tab2, tab3, tab4, tab5 = st.tabs(
@@ -810,6 +872,9 @@ def main():
             with col:
                 st.plotly_chart(pie_chart(w, name, PORT_COLORS.get(name, NAV), t=T),
                                 use_container_width=True, config={"displayModeBar": False})
+
+        st.markdown('<div class="section-label">Analyst Price Targets</div>', unsafe_allow_html=True)
+        st.markdown(analyst_table(list(active), analyst_data, cur_prices), unsafe_allow_html=True)
 
         st.markdown('<div class="section-label">Rebalancing Guide</div>', unsafe_allow_html=True)
         st.markdown(
