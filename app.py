@@ -181,6 +181,38 @@ def fetch_current_prices(tickers: tuple) -> dict:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def fetch_income_history(tickers: tuple) -> dict:
+    out = {}
+    for tk in tickers:
+        try:
+            inc = yf.Ticker(tk).income_stmt
+            if inc is None or inc.empty:
+                out[tk] = {}
+                continue
+            inc.index = [str(i).lower().strip() for i in inc.index]
+            rev_series = ni_series = None
+            for idx in inc.index:
+                if rev_series is None and ("total revenue" in idx or idx == "revenue"):
+                    rev_series = inc.loc[idx]
+                if ni_series is None and "net income" in idx:
+                    ni_series = inc.loc[idx]
+            result = {"revenue_history": [], "net_income_history": [], "income_years": []}
+            if rev_series is not None:
+                rev_clean = rev_series.dropna().sort_index()
+                result["revenue_history"] = list(rev_clean.values.astype(float))
+                result["income_years"] = [str(d.year) for d in rev_clean.index]
+            if ni_series is not None:
+                ni_clean = ni_series.dropna().sort_index()
+                result["net_income_history"] = list(ni_clean.values.astype(float))
+                if not result["income_years"]:
+                    result["income_years"] = [str(d.year) for d in ni_clean.index]
+            out[tk] = result
+        except Exception:
+            out[tk] = {}
+    return out
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_analyst_data(tickers: tuple) -> dict:
     out = {}
     for tk in tickers:
@@ -529,6 +561,37 @@ def chart_mc_fan(weights, daily_ret, t=None) -> go.Figure:
     return fig
 
 
+def chart_financials(revenue_history, net_income_history, income_years, title="", t=None) -> go.Figure:
+    bg   = t["bg"]   if t else BG
+    tc   = t["tc"]   if t else NAV
+    grid = t["grid"] if t else "#e2e0db"
+    rev_color = STL if t else NAV
+
+    all_vals = [abs(v) for v in revenue_history + net_income_history]
+    scale, unit = (1e9, "B") if max(all_vals, default=1) >= 1e9 else (1e6, "M")
+
+    fig = go.Figure()
+    if revenue_history:
+        fig.add_trace(go.Bar(
+            x=income_years, y=[v / scale for v in revenue_history],
+            name="Revenue", marker_color=rev_color, opacity=0.85,
+            hovertemplate=f"$%{{y:.2f}}{unit}<extra>Revenue</extra>",
+        ))
+    if net_income_history:
+        ni_colors = [SGE if v >= 0 else RED for v in net_income_history]
+        fig.add_trace(go.Bar(
+            x=income_years, y=[v / scale for v in net_income_history],
+            name="Net Income", marker_color=ni_colors, opacity=0.82,
+            hovertemplate=f"$%{{y:.2f}}{unit}<extra>Net Income</extra>",
+        ))
+    fig.update_layout(**_layout(210, t), barmode="group",
+                      title=dict(text=title, font=dict(size=11, color=tc), x=0.5) if title else {})
+    fig.update_xaxes(type="category")
+    fig.update_yaxes(tickformat=".1f", tickprefix="$", ticksuffix=unit,
+                     zeroline=True, zerolinecolor=grid, zerolinewidth=1)
+    return fig
+
+
 def chart_price_history(prices: pd.DataFrame, t=None) -> go.Figure:
     palette = [NAV, SGE, GLD, STL, RED, MID, "#6b4fbb", "#c87941", "#2d8a8a", "#8a4a6b"]
     fig = go.Figure()
@@ -818,9 +881,10 @@ def main():
         mc_df = mc_frontier(daily_ret, n_sims, rf)
 
     with st.spinner("Fetching supplementary data…"):
-        cur_prices   = fetch_current_prices(active)
-        sectors      = fetch_sectors(active)
-        analyst_data = fetch_analyst_data(active)
+        cur_prices     = fetch_current_prices(active)
+        sectors        = fetch_sectors(active)
+        analyst_data   = fetch_analyst_data(active)
+        income_history = fetch_income_history(active)
 
     # ══ TABS ══════════════════════════════════════════════════════════════════
     tab1, tab2, tab3, tab4, tab5 = st.tabs(
@@ -860,6 +924,22 @@ def main():
         st.markdown('<div class="section-label">Individual Asset Price History</div>', unsafe_allow_html=True)
         st.plotly_chart(chart_price_history(prices, t=T),
                         use_container_width=True, config={"displayModeBar": False})
+
+        st.markdown('<div class="section-label">Revenue &amp; Net Income by Ticker</div>', unsafe_allow_html=True)
+        fin_cols = st.columns(2)
+        for i, tk in enumerate(active):
+            d = income_history.get(tk, {})
+            if d.get("revenue_history") or d.get("net_income_history"):
+                with fin_cols[i % 2]:
+                    st.plotly_chart(
+                        chart_financials(
+                            d.get("revenue_history", []),
+                            d.get("net_income_history", []),
+                            d.get("income_years", []),
+                            title=tk, t=T,
+                        ),
+                        use_container_width=True, config={"displayModeBar": False},
+                    )
 
     # ── Tab 2: Allocations ─────────────────────────────────────────────────────
     with tab2:
