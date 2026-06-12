@@ -115,6 +115,36 @@ CUSTOM_CSS = """
 </style>
 """
 
+DARK_CSS = """
+<style>
+    .stApp { background-color: #0d1117 !important; color: #e2e4ed !important; }
+    section[data-testid="stSidebar"] { background-color: #0b0f1a !important; }
+    section[data-testid="stSidebar"] label { color: #c8cad4 !important; }
+    section[data-testid="stSidebar"] p { color: #8b93a7 !important; }
+    .stTabs [data-baseweb="tab-list"] { border-bottom-color: #1e2538 !important; }
+    .stTabs [data-baseweb="tab"] { color: #8b93a7 !important; }
+    .stTabs [aria-selected="true"] { color: #e2e4ed !important; border-bottom-color: #7c9cbf !important; }
+    .metric-card { background-color: #161b27 !important; }
+    .metric-label { color: #8b93a7 !important; }
+    .metric-value { color: #e2e4ed !important; }
+    .metric-sub { color: #8b93a7 !important; }
+    .section-label { color: #8b93a7 !important; border-bottom-color: #1e2538 !important; }
+    .mtable td { color: #e2e4ed !important; }
+    .mtable tr:nth-child(even) td { background-color: #1a1f2e !important; }
+    .mtable tr:hover td { background-color: #202640 !important; }
+    .mtable td.lh { color: #8b93a7 !important; }
+    .error-box { background-color: #1f0a0a !important; color: #f87171 !important; }
+    .warn-box { background-color: #201a09 !important; color: #fbbf24 !important; }
+    .landing { color: #4a5568 !important; }
+    .ts-row { border-bottom-color: #1e2538 !important; }
+    .ts-label { color: #8b93a7 !important; }
+    .ts-value { color: #e2e4ed !important; }
+    div[data-testid="stMarkdownContainer"] p { color: #c8cad4; }
+    .stTextInput input { background-color: #161b27 !important; color: #e2e4ed !important; }
+    .stSelectbox div[data-baseweb="select"] { background-color: #161b27 !important; }
+</style>
+"""
+
 
 # ── Data fetching ──────────────────────────────────────────────────────────────
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -286,20 +316,23 @@ def mc_future(weights: dict, daily_ret: pd.DataFrame, n_paths: int = 1000) -> pd
 
 
 # ── Chart helpers ──────────────────────────────────────────────────────────────
-def _layout(h=300):
+def _layout(h=300, t=None):
+    bg   = t["bg"]   if t else BG
+    tc   = t["tc"]   if t else NAV
+    grid = t["grid"] if t else "#e2e0db"
     return dict(
-        plot_bgcolor=BG, paper_bgcolor=BG,
-        font=dict(family="Arial,sans-serif", size=11, color=NAV),
+        plot_bgcolor=bg, paper_bgcolor=bg,
+        font=dict(family="Arial,sans-serif", size=11, color=tc),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
                     font=dict(size=10), bgcolor="rgba(0,0,0,0)"),
-        xaxis=dict(showgrid=False, linecolor=LGT),
-        yaxis=dict(showgrid=True, gridcolor="#e2e0db", zeroline=False),
+        xaxis=dict(showgrid=False, linecolor=grid),
+        yaxis=dict(showgrid=True, gridcolor=grid, zeroline=False),
         margin=dict(l=40, r=10, t=30, b=30),
         height=h,
     )
 
 
-def chart_frontier(mc_df, all_metrics, spy_prices, rf) -> go.Figure:
+def chart_frontier(mc_df, all_metrics, spy_prices, rf, t=None) -> go.Figure:
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=mc_df["vol"], y=mc_df["ret"], mode="markers",
@@ -326,27 +359,28 @@ def chart_frontier(mc_df, all_metrics, spy_prices, rf) -> go.Figure:
             text=[name], textposition="top center", textfont=dict(size=9, color=c),
             name=name,
         ))
-    fig.update_layout(**_layout(400))
+    fig.update_layout(**_layout(400, t))
     fig.update_xaxes(tickformat=".0%", title=dict(text="Annual Volatility", font=dict(size=10)))
     fig.update_yaxes(tickformat=".0%", title=dict(text="Annual Return", font=dict(size=10)))
     return fig
 
 
-def chart_corr(daily_ret) -> go.Figure:
+def chart_corr(daily_ret, t=None) -> go.Figure:
     corr = daily_ret.corr().round(2)
     tks = corr.columns.tolist()
+    mid_bg = t["bg"] if t else BG
     fig = go.Figure(go.Heatmap(
         z=corr.values, x=tks, y=tks,
-        colorscale=[[0, "#faf0ef"], [0.5, BG], [1, NAV]], zmin=-1, zmax=1,
+        colorscale=[[0, "#faf0ef"], [0.5, mid_bg], [1, NAV]], zmin=-1, zmax=1,
         text=[[f"{v:.2f}" for v in row] for row in corr.values],
         texttemplate="%{text}", textfont=dict(size=10),
         hovertemplate="%{y}/%{x}: %{z:.2f}<extra></extra>",
     ))
-    fig.update_layout(**_layout(max(280, 48 * len(tks))))
+    fig.update_layout(**_layout(max(280, 48 * len(tks)), t))
     return fig
 
 
-def chart_asset_scatter(daily_ret) -> go.Figure:
+def chart_asset_scatter(daily_ret, t=None) -> go.Figure:
     rets = daily_ret.mean() * 252
     vols = daily_ret.std() * np.sqrt(252)
     fig = go.Figure()
@@ -356,13 +390,13 @@ def chart_asset_scatter(daily_ret) -> go.Figure:
             marker=dict(size=10, color=SGE if rets[t] > 0 else RED, opacity=0.85),
             text=[t], textposition="top center", textfont=dict(size=9), name=t,
         ))
-    fig.update_layout(**_layout(300), showlegend=False)
+    fig.update_layout(**_layout(300, t), showlegend=False)
     fig.update_xaxes(tickformat=".0%", title=dict(text="Annual Volatility", font=dict(size=10)))
     fig.update_yaxes(tickformat=".0%", title=dict(text="Annual Return", font=dict(size=10)))
     return fig
 
 
-def chart_sector_bar(weights_dict, sectors) -> go.Figure:
+def chart_sector_bar(weights_dict, sectors, t=None) -> go.Figure:
     all_sec = sorted({s for s in sectors.values()})
     fig = go.Figure()
     colors = [NAV, SGE, GLD, STL]
@@ -375,12 +409,12 @@ def chart_sector_bar(weights_dict, sectors) -> go.Figure:
             name=name, x=all_sec, y=[sw.get(s, 0) for s in all_sec],
             marker_color=colors[i % 4], opacity=0.85,
         ))
-    fig.update_layout(**_layout(280), barmode="group")
+    fig.update_layout(**_layout(280, t), barmode="group")
     fig.update_yaxes(tickformat=".0%")
     return fig
 
 
-def chart_var(all_metrics) -> go.Figure:
+def chart_var(all_metrics, t=None) -> go.Figure:
     names = list(all_metrics.keys())
     colors = [PORT_COLORS.get(n, MID) for n in names]
     fig = go.Figure()
@@ -390,12 +424,12 @@ def chart_var(all_metrics) -> go.Figure:
     fig.add_trace(go.Bar(name="CVaR (95%)", x=names,
                          y=[all_metrics[n]["CVaR"] for n in names],
                          marker_color=colors, opacity=0.40))
-    fig.update_layout(**_layout(260), barmode="group")
+    fig.update_layout(**_layout(260, t), barmode="group")
     fig.update_yaxes(tickformat=".2%")
     return fig
 
 
-def chart_rolling_vol(daily_ret, weights_dict, window=30) -> go.Figure:
+def chart_rolling_vol(daily_ret, weights_dict, window=30, t=None) -> go.Figure:
     fig = go.Figure()
     for name, weights in weights_dict.items():
         w = np.array([weights.get(t, 0.0) for t in daily_ret.columns])
@@ -403,12 +437,12 @@ def chart_rolling_vol(daily_ret, weights_dict, window=30) -> go.Figure:
         rv = port.rolling(window).std() * np.sqrt(252)
         fig.add_trace(go.Scatter(x=rv.index, y=rv.values, name=name, mode="lines",
                                  line=dict(color=PORT_COLORS.get(name, MID), width=1.5)))
-    fig.update_layout(**_layout(260))
+    fig.update_layout(**_layout(260, t))
     fig.update_yaxes(tickformat=".0%", title=dict(text=f"{window}d Rolling Vol", font=dict(size=10)))
     return fig
 
 
-def chart_cumulative(daily_ret, weights_dict, spy_prices) -> go.Figure:
+def chart_cumulative(daily_ret, weights_dict, spy_prices, t=None) -> go.Figure:
     fig = go.Figure()
     spy_r = spy_prices.pct_change().dropna()
     cum_spy = (1 + spy_r).cumprod() - 1
@@ -420,12 +454,12 @@ def chart_cumulative(daily_ret, weights_dict, spy_prices) -> go.Figure:
         cum = (1 + port).cumprod() - 1
         fig.add_trace(go.Scatter(x=cum.index, y=cum.values, name=name, mode="lines",
                                  line=dict(color=PORT_COLORS.get(name, MID), width=2)))
-    fig.update_layout(**_layout(340))
+    fig.update_layout(**_layout(340, t))
     fig.update_yaxes(tickformat=".0%", title=dict(text="Cumulative Return", font=dict(size=10)))
     return fig
 
 
-def chart_rolling_sharpe(daily_ret, weights_dict, rf, window=90) -> go.Figure:
+def chart_rolling_sharpe(daily_ret, weights_dict, rf, window=90, t=None) -> go.Figure:
     fig = go.Figure()
     for name, weights in weights_dict.items():
         w = np.array([weights.get(t, 0.0) for t in daily_ret.columns])
@@ -434,12 +468,12 @@ def chart_rolling_sharpe(daily_ret, weights_dict, rf, window=90) -> go.Figure:
         fig.add_trace(go.Scatter(x=rs.index, y=rs.values, name=name, mode="lines",
                                  line=dict(color=PORT_COLORS.get(name, MID), width=1.5)))
     fig.add_hline(y=0, line=dict(color=LGT, width=1, dash="dash"))
-    fig.update_layout(**_layout(260))
+    fig.update_layout(**_layout(260, t))
     fig.update_yaxes(title=dict(text=f"{window}d Rolling Sharpe", font=dict(size=10)))
     return fig
 
 
-def chart_drawdown(daily_ret, weights_dict) -> go.Figure:
+def chart_drawdown(daily_ret, weights_dict, t=None) -> go.Figure:
     fig = go.Figure()
     for name, weights in weights_dict.items():
         w = np.array([weights.get(t, 0.0) for t in daily_ret.columns])
@@ -450,12 +484,12 @@ def chart_drawdown(daily_ret, weights_dict) -> go.Figure:
         fig.add_trace(go.Scatter(x=dd.index, y=dd.values, name=name, mode="lines",
                                  fill="tozeroy", line=dict(color=c, width=1),
                                  fillcolor=_hex_rgba(c, 0.15)))
-    fig.update_layout(**_layout(260))
+    fig.update_layout(**_layout(260, t))
     fig.update_yaxes(tickformat=".0%", title=dict(text="Drawdown", font=dict(size=10)))
     return fig
 
 
-def chart_mc_fan(weights, daily_ret) -> go.Figure:
+def chart_mc_fan(weights, daily_ret, t=None) -> go.Figure:
     paths = mc_future(weights, daily_ret, n_paths=1000)
     days = list(range(252))
     b = {p: paths.quantile(p / 100, axis=0).values for p in [5, 25, 50, 75, 95]}
@@ -471,25 +505,27 @@ def chart_mc_fan(weights, daily_ret) -> go.Figure:
     fig.add_trace(go.Scatter(x=days, y=b[50], name="Median",
                              line=dict(color=NAV, width=2)))
     fig.add_hline(y=0, line=dict(color=LGT, width=1, dash="dash"))
-    fig.update_layout(**_layout(300))
+    fig.update_layout(**_layout(300, t))
     fig.update_yaxes(tickformat=".0%", title=dict(text="Cumulative Return (1-yr fwd)", font=dict(size=10)))
     fig.update_xaxes(title=dict(text="Trading Days Forward", font=dict(size=10)))
     return fig
 
 
-def pie_chart(weights, title, color) -> go.Figure:
-    labels = [t for t, w in weights.items() if w > 0.001]
-    values = [weights[t] for t in labels]
+def pie_chart(weights, title, color, t=None) -> go.Figure:
+    labels = [tk for tk, w in weights.items() if w > 0.001]
+    values = [weights[tk] for tk in labels]
+    bg = t["bg"] if t else BG
+    tc = t["tc"] if t else NAV
     palette = [color, LGT, CARD, STL, SGE, GLD, MID, NAV, RED, BG]
     fig = go.Figure(go.Pie(
         labels=labels, values=values, hole=0.38,
-        marker=dict(colors=palette[:len(labels)], line=dict(color=BG, width=2)),
+        marker=dict(colors=palette[:len(labels)], line=dict(color=bg, width=2)),
         textfont=dict(size=10),
         hovertemplate="%{label}: %{percent}<extra></extra>",
     ))
     fig.update_layout(
-        plot_bgcolor=BG, paper_bgcolor=BG,
-        font=dict(family="Arial,sans-serif", size=10, color=NAV),
+        plot_bgcolor=bg, paper_bgcolor=bg,
+        font=dict(family="Arial,sans-serif", size=10, color=tc),
         legend=dict(font=dict(size=9), bgcolor="rgba(0,0,0,0)"),
         margin=dict(l=10, r=10, t=36, b=10), height=240,
         title=dict(text=title, font=dict(size=10, color=color), x=0.5),
@@ -583,10 +619,15 @@ def rebalance_table(weights_dict, cur_prices, portfolio_value) -> str:
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main():
+    dark_mode = st.session_state.get("dark_mode", False)
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+    if dark_mode:
+        st.markdown(DARK_CSS, unsafe_allow_html=True)
+    T = {"bg": "#0d1117", "tc": "#e2e4ed", "grid": "#1e2538"} if dark_mode else None
 
     # ── Sidebar ────────────────────────────────────────────────────────────────
     with st.sidebar:
+        st.toggle("Dark Mode", key="dark_mode")
         st.markdown(
             '<p style="font-size:16px;font-weight:700;color:#1a2744;margin-bottom:2px;">Portfolio Optimizer</p>'
             '<p style="font-size:10px;color:#8b93a7;margin:0 0 16px;">MPT · HRP · Monte Carlo</p>',
@@ -733,7 +774,7 @@ def main():
         st.markdown(metrics_table(all_metrics), unsafe_allow_html=True)
 
         st.markdown('<div class="section-label">Efficient Frontier</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_frontier(mc_df, all_metrics, spy_prices, rf),
+        st.plotly_chart(chart_frontier(mc_df, all_metrics, spy_prices, rf, t=T),
                         use_container_width=True, config={"displayModeBar": False})
 
     # ── Tab 2: Allocations ─────────────────────────────────────────────────────
@@ -745,7 +786,7 @@ def main():
         pie_cols = st.columns(len(weights_dict))
         for col, (name, w) in zip(pie_cols, weights_dict.items()):
             with col:
-                st.plotly_chart(pie_chart(w, name, PORT_COLORS.get(name, NAV)),
+                st.plotly_chart(pie_chart(w, name, PORT_COLORS.get(name, NAV), t=T),
                                 use_container_width=True, config={"displayModeBar": False})
 
         st.markdown('<div class="section-label">Rebalancing Guide</div>', unsafe_allow_html=True)
@@ -761,41 +802,41 @@ def main():
         c1, c2 = st.columns(2)
         with c1:
             st.markdown('<div class="section-label">Correlation Heatmap</div>', unsafe_allow_html=True)
-            st.plotly_chart(chart_corr(daily_ret), use_container_width=True,
+            st.plotly_chart(chart_corr(daily_ret, t=T), use_container_width=True,
                             config={"displayModeBar": False})
         with c2:
             st.markdown('<div class="section-label">Asset Risk / Return</div>', unsafe_allow_html=True)
-            st.plotly_chart(chart_asset_scatter(daily_ret), use_container_width=True,
+            st.plotly_chart(chart_asset_scatter(daily_ret, t=T), use_container_width=True,
                             config={"displayModeBar": False})
 
         st.markdown('<div class="section-label">Sector Allocation by Portfolio</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_sector_bar(weights_dict, sectors),
+        st.plotly_chart(chart_sector_bar(weights_dict, sectors, t=T),
                         use_container_width=True, config={"displayModeBar": False})
 
         c3, c4 = st.columns(2)
         with c3:
             st.markdown('<div class="section-label">VaR &amp; CVaR Comparison</div>', unsafe_allow_html=True)
-            st.plotly_chart(chart_var(all_metrics), use_container_width=True,
+            st.plotly_chart(chart_var(all_metrics, t=T), use_container_width=True,
                             config={"displayModeBar": False})
         with c4:
             st.markdown('<div class="section-label">Rolling 30-Day Volatility</div>', unsafe_allow_html=True)
-            st.plotly_chart(chart_rolling_vol(daily_ret, weights_dict),
+            st.plotly_chart(chart_rolling_vol(daily_ret, weights_dict, t=T),
                             use_container_width=True, config={"displayModeBar": False})
 
     # ── Tab 4: Performance ─────────────────────────────────────────────────────
     with tab4:
         st.markdown('<div class="section-label">Cumulative Returns vs SPY</div>', unsafe_allow_html=True)
-        st.plotly_chart(chart_cumulative(daily_ret, weights_dict, spy_prices),
+        st.plotly_chart(chart_cumulative(daily_ret, weights_dict, spy_prices, t=T),
                         use_container_width=True, config={"displayModeBar": False})
 
         c5, c6 = st.columns(2)
         with c5:
             st.markdown('<div class="section-label">Rolling 90-Day Sharpe</div>', unsafe_allow_html=True)
-            st.plotly_chart(chart_rolling_sharpe(daily_ret, weights_dict, rf),
+            st.plotly_chart(chart_rolling_sharpe(daily_ret, weights_dict, rf, t=T),
                             use_container_width=True, config={"displayModeBar": False})
         with c6:
             st.markdown('<div class="section-label">Drawdown</div>', unsafe_allow_html=True)
-            st.plotly_chart(chart_drawdown(daily_ret, weights_dict),
+            st.plotly_chart(chart_drawdown(daily_ret, weights_dict, t=T),
                             use_container_width=True, config={"displayModeBar": False})
 
         if "Max Sharpe" in weights_dict:
@@ -808,7 +849,7 @@ def main():
                 "Bootstrap from historical daily returns · Not a forecast.</p>",
                 unsafe_allow_html=True,
             )
-            st.plotly_chart(chart_mc_fan(weights_dict["Max Sharpe"], daily_ret),
+            st.plotly_chart(chart_mc_fan(weights_dict["Max Sharpe"], daily_ret, t=T),
                             use_container_width=True, config={"displayModeBar": False})
 
     # ── Tab 5: Tear Sheet ──────────────────────────────────────────────────────
@@ -862,9 +903,9 @@ def main():
                 )
 
             with tc2:
-                st.plotly_chart(pie_chart(w, "Allocation", NAV),
+                st.plotly_chart(pie_chart(w, "Allocation", NAV, t=T),
                                 use_container_width=True, config={"displayModeBar": False})
-                pw = np.array([w.get(t, 0.0) for t in daily_ret.columns])
+                pw = np.array([w.get(tk, 0.0) for tk in daily_ret.columns])
                 cum_p = (1 + pd.Series(daily_ret.values @ pw, index=daily_ret.index)).cumprod() - 1
                 cum_spy = (1 + spy_prices.pct_change().dropna()).cumprod() - 1
                 mini = go.Figure()
@@ -872,11 +913,11 @@ def main():
                                           line=dict(color=SPY_COLOR, width=1.5, dash="dot")))
                 mini.add_trace(go.Scatter(x=cum_p.index, y=cum_p.values, name="Max Sharpe",
                                           line=dict(color=NAV, width=2)))
-                mini.update_layout(**_layout(190))
+                mini.update_layout(**_layout(190, T))
                 mini.update_yaxes(tickformat=".0%")
                 st.plotly_chart(mini, use_container_width=True, config={"displayModeBar": False})
 
-                rs = chart_rolling_sharpe(daily_ret, {"Max Sharpe": w}, rf)
+                rs = chart_rolling_sharpe(daily_ret, {"Max Sharpe": w}, rf, t=T)
                 rs.update_layout(height=165, margin=dict(l=40, r=10, t=10, b=30))
                 st.plotly_chart(rs, use_container_width=True, config={"displayModeBar": False})
 
